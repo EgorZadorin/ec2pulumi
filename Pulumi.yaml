@@ -1,0 +1,6 @@
+name: EC2pulumi
+description: using pulumi to provision EC2 instances behind a load balancer
+runtime:
+    name: python
+    options:
+        virtualenv: venv
