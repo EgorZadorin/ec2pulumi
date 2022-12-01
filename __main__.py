@@ -78,39 +78,28 @@ for i in [1, 2]:
         ),
     ])
 
-    if i == 1:
-        server = aws.ec2.Instance(
-            f"web-server-{i}",
-            instance_type="t2.micro",
-            vpc_security_group_ids=[group.id],
-            ami=ami.id,
-            user_data="""#!/bin/bash
-            echo \"Hello, World -- from 1!\" > index.html
-            nohup python -m SimpleHTTPServer 80 &
-            """,
-            tags={
-                "Name": "web-server",
-            },
-        )
-    else:
-        server = aws.ec2.Instance(
-            f"web-server-{i}",
-            instance_type="t2.micro",
-            vpc_security_group_ids=[group.id],
-            ami=ami.id,
-            user_data="""#!/bin/bash
-            mkdir 2
-            cd 2
-            echo \"Hello, World -- from dir 2!\" > index.html
-            cd ..
-            echo \"Hello, World -- from 2!\" > index.html
-            nohup python -m SimpleHTTPServer 80 &
-            """,
-            tags={
-                "Name": "web-server",
-            },
-        )
-
+    server = aws.ec2.Instance(
+        f"web-server-{i}",
+        instance_type="t2.micro",
+        vpc_security_group_ids=[group.id],
+        ami=ami.id,
+        user_data="""#!/bin/bash
+mkdir {} 
+cd {}
+echo \"Hello, World -- from {}!\" > index.html
+cd ..
+echo \"Hello, World -- from {}!\" > index.html
+nohup python -m SimpleHTTPServer 80 &
+""".format(
+            i,
+            i,
+            i,
+            i
+        ),
+        tags={
+            "Name": "web-server",
+        },
+    )
     ips.append(server.public_ip)
     hostnames.append(server.public_dns)
 
