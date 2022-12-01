@@ -3,7 +3,6 @@
 import pulumi
 import pulumi_aws as aws
 
-
 ami = aws.get_ami(
     most_recent=True,
     owners=["137112412989"],
@@ -49,47 +48,78 @@ lb = aws.lb.LoadBalancer(
     load_balancer_type="application",
 )
 
-target_group = aws.lb.TargetGroup(
-    "target-group", port=80, protocol="HTTP", target_type="ip", vpc_id=vpc.id
-)
+target_groups = [
+    aws.lb.TargetGroup("target-group1", port=80, protocol="HTTP", target_type="ip", vpc_id=vpc.id),
+    aws.lb.TargetGroup("target-group2", port=80, protocol="HTTP", target_type="ip", vpc_id=vpc.id),
+]
+
+ips = []
+hostnames = []
 
 listener = aws.lb.Listener(
     "listener",
     load_balancer_arn=lb.arn,
     port=80,
-    default_actions=[{"type": "forward", "target_group_arn": target_group.arn}],
+    default_actions=[{"type": "forward", "target_group_arn": target_groups[0].arn}],
 )
 
-
-ips = []
-hostnames = []
-
-for az in aws.get_availability_zones().names:
-    server = aws.ec2.Instance(
-        f"web-server-{az}",
-        instance_type="t2.micro",
-        vpc_security_group_ids=[group.id],
-        ami=ami.id,
-        user_data="""#!/bin/bash
-echo \"Hello, World -- from {}!\" > index.html
-nohup python -m SimpleHTTPServer 80 &
-""".format(
-            az
+for i in [1, 2]:
+    listener_rule = aws.lb.ListenerRule(f"static{i}",
+        listener_arn=listener.arn,
+        priority=i,
+        actions=[aws.lb.ListenerRuleActionArgs(
+            type="forward",
+            target_group_arn=target_groups[i - 1].arn,
+        )],
+        conditions=[aws.lb.ListenerRuleConditionArgs(
+            path_pattern=aws.lb.ListenerRuleConditionPathPatternArgs(
+               values=[f"/{i}"],
+            ),
         ),
-        tags={
-            "Name": "web-server",
-        },
-    )
+    ])
+
+    if i == 1:
+        server = aws.ec2.Instance(
+            f"web-server-{i}",
+            instance_type="t2.micro",
+            vpc_security_group_ids=[group.id],
+            ami=ami.id,
+            user_data="""#!/bin/bash
+            echo \"Hello, World -- from 1!\" > index.html
+            nohup python -m SimpleHTTPServer 80 &
+            """,
+            tags={
+                "Name": "web-server",
+            },
+        )
+    else:
+        server = aws.ec2.Instance(
+            f"web-server-{i}",
+            instance_type="t2.micro",
+            vpc_security_group_ids=[group.id],
+            ami=ami.id,
+            user_data="""#!/bin/bash
+            mkdir 2
+            cd 2
+            echo \"Hello, World -- from dir 2!\" > index.html
+            cd ..
+            echo \"Hello, World -- from 2!\" > index.html
+            nohup python -m SimpleHTTPServer 80 &
+            """,
+            tags={
+                "Name": "web-server",
+            },
+        )
+
     ips.append(server.public_ip)
     hostnames.append(server.public_dns)
 
     attachment = aws.lb.TargetGroupAttachment(
-        f"web-server-{az}",
-        target_group_arn=target_group.arn,
+        f"web-server-{i}",
+        target_group_arn=target_groups[i - 1].arn,
         target_id=server.private_ip,
         port=80,
     )
-
 
 pulumi.export("ips", ips)
 pulumi.export("hostnames", hostnames)
