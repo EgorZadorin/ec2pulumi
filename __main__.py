@@ -3,10 +3,10 @@
 import pulumi
 import pulumi_aws as aws
 
-ami = aws.get_ami(
+ami = aws.ec2.get_ami(
     most_recent=True,
-    owners=["137112412989"],
-    filters=[{"name": "name", "values": ["amzn-ami-hvm-*-x86_64-ebs"]}],
+    owners=["amazon"],
+    filters=[{"name": "description", "values": ["Amazon Linux 2 *"]}],
 )
 
 vpc = aws.ec2.get_vpc(default=True)
@@ -17,6 +17,12 @@ group = aws.ec2.SecurityGroup(
     description="Enable HTTP Access",
     vpc_id=vpc.id,
     ingress=[
+        {
+          "protocol": "tcp",
+          "from_port": 22,
+          "to_port": 22,
+          "cidr_blocks": ["0.0.0.0/0"],
+        },
         {
             "protocol": "icmp",
             "from_port": 8,
@@ -32,9 +38,9 @@ group = aws.ec2.SecurityGroup(
     ],
     egress=[
         {
-            "protocol": "tcp",
-            "from_port": 80,
-            "to_port": 80,
+            "protocol": "-1",
+            "from_port": 0,
+            "to_port": 0,
             "cidr_blocks": ["0.0.0.0/0"],
         }
     ],
@@ -73,7 +79,7 @@ for i in [1, 2]:
         )],
         conditions=[aws.lb.ListenerRuleConditionArgs(
             path_pattern=aws.lb.ListenerRuleConditionPathPatternArgs(
-               values=[f"/{i}"],
+               values=[f"/{i}/*"],
             ),
         ),
     ])
@@ -84,12 +90,14 @@ for i in [1, 2]:
         vpc_security_group_ids=[group.id],
         ami=ami.id,
         user_data="""#!/bin/bash
-mkdir {} 
-cd {}
-echo \"Hello, World -- from {}!\" > index.html
-cd ..
-echo \"Hello, World -- from {}!\" > index.html
-nohup python -m SimpleHTTPServer 80 &
+yum update -y
+yum install -y httpd
+systemctl start httpd
+systemctl enable httpd
+echo "<h1>Hello World from server {}</h1>" > /var/www/html/index.html
+sudo chmod 777 /var/www/html -R
+mkdir /var/www/html/{}
+echo "<h1>This is directory in server {}!</h1>" > /var/www/html/{}/index.html
 """.format(
             i,
             i,
